@@ -20,7 +20,7 @@ class Encoder(nn.Module):
             self.dim = 512
 
     def forward(self, x):
-        x = self.net(x)
-        x = x.permute(0, 2, 3, 1)
-        x = x.view(x.size(0), -1, x.size(-1))
+        x = self.net(x)                 # (B, C, Hf, Wf)
+        x = x.permute(0, 2, 3, 1)       # (B, Hf, Wf, C)
+        x = x.view(x.size(0), -1, x.size(-1))  # (B, Hf*Wf, C)
         return x

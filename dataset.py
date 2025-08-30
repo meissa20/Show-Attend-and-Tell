@@ -27,7 +27,7 @@ class ImageCaptionDataset(Dataset):
         img = pil_loader(img_path)
         if self.transform is not None:
             img = self.transform(img)
-
+            
         if self.split_type == 'train':
             return torch.FloatTensor(img), torch.tensor(self.captions[index])
 

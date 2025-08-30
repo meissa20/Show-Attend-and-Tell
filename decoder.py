@@ -6,7 +6,7 @@ from attention import Attention
 class Decoder(nn.Module):
     def __init__(self, vocabulary_size, encoder_dim, tf=False):
         super(Decoder, self).__init__()
-        self.use_tf = tf
+        self.use_tf = tf                           # Teacher forcing used during training, model uses ground truth captions.
 
         self.vocabulary_size = vocabulary_size
         self.encoder_dim = encoder_dim
@@ -15,22 +15,18 @@ class Decoder(nn.Module):
         self.init_c = nn.Linear(encoder_dim, 512)
         self.tanh = nn.Tanh()
 
-        self.f_beta = nn.Linear(512, encoder_dim)
-        self.sigmoid = nn.Sigmoid()
+        self.f_beta = nn.Linear(512, encoder_dim)  # That linear layer lets the model learn over training when to pay attention to the image 
+        self.sigmoid = nn.Sigmoid()                # and when to trust its internal language memory.
 
         self.deep_output = nn.Linear(512, vocabulary_size)
         self.dropout = nn.Dropout()
 
         self.attention = Attention(encoder_dim)
-        self.embedding = nn.Embedding(vocabulary_size, 512)
+        self.embedding = nn.Embedding(vocabulary_size, 512)   # Converts each word in the vocab into a vector of size 512
         self.lstm = nn.LSTMCell(512 + encoder_dim, 512)
 
     def forward(self, img_features, captions):
-        """
-        We can use teacher forcing during training. For reference, refer to
-        https://www.deeplearningbook.org/contents/rnn.html
 
-        """
         batch_size = img_features.size(0)
 
         h, c = self.get_init_lstm_state(img_features)
@@ -38,37 +34,39 @@ class Decoder(nn.Module):
 
         prev_words = torch.zeros(batch_size, 1).long().cuda()
         if self.use_tf:
-            embedding = self.embedding(captions) if self.training else self.embedding(prev_words)
+            embedding = self.embedding(captions) if self.training else self.embedding(prev_words)  
         else:
-            embedding = self.embedding(prev_words)
+            embedding = self.embedding(prev_words)  # Teacher forcing OFF,  model uses its own predicted words.
 
         preds = torch.zeros(batch_size, max_timespan, self.vocabulary_size).cuda()
         alphas = torch.zeros(batch_size, max_timespan, img_features.size(1)).cuda()
         for t in range(max_timespan):
             context, alpha = self.attention(img_features, h)
-            gate = self.sigmoid(self.f_beta(h))
-            gated_context = gate * context
+            gate = self.sigmoid(self.f_beta(h)) # Sometimes the model might not want to rely too much on the image → maybe the word is something predictable from the sentence alone (like “a”, “the”).
+            gated_context = gate * context      # Other times, the model really needs the image → like when deciding “dog” vs “cat”.
+                                                # shape (B, encoder_dim)
 
             if self.use_tf and self.training:
-                lstm_input = torch.cat((embedding[:, t], gated_context), dim=1)
+                lstm_input = torch.cat((embedding[:, t], gated_context), dim=1)     # Just extract the vector of the word at t and conc with the gated context to feed it to LSTM
             else:
-                embedding = embedding.squeeze(1) if embedding.dim() == 3 else embedding
-                lstm_input = torch.cat((embedding, gated_context), dim=1)
+                embedding = embedding.squeeze(1) if embedding.dim() == 3 else embedding # shape of embedding(prev) (B, 1, 512)
+                lstm_input = torch.cat((embedding, gated_context), dim=1)          
 
             h, c = self.lstm(lstm_input, (h, c))
-            output = self.deep_output(self.dropout(h))
+            output = self.deep_output(self.dropout(h))  # (B, t, Vocab_size) 
 
-            preds[:, t] = output
-            alphas[:, t] = alpha
+            preds[:, t] = output  # store all predicted word scores over time.
+            alphas[:, t] = alpha  # stores attention distribution (say 49 image regions)
 
             if not self.training or not self.use_tf:
-                embedding = self.embedding(output.max(1)[1].reshape(batch_size, 1))
+                embedding = self.embedding(output.max(1)[1].reshape(batch_size, 1)) # .max(1) highest score in row, [1] for indicies
+                                                                                    # convert the predicted word index back into its 512-d vector
         return preds, alphas
 
     def get_init_lstm_state(self, img_features):
-        avg_features = img_features.mean(dim=1)
-
-        c = self.init_c(avg_features)
+        avg_features = img_features.mean(dim=1)     # Normally, an LSTM starts with some arbitrary hidden state and cell state  (like zeros).
+                                                    # But in image captioning, we don’t want the LSTM to start blind. 
+        c = self.init_c(avg_features)               # Instead, we let the CNN features of the image decide what the “starting memory” and “starting thought” of the LSTM should be.
         c = self.tanh(c)
 
         h = self.init_h(avg_features)
