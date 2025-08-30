@@ -1,46 +1,49 @@
 import argparse, json
 from collections import Counter
+import random
+import os
 
-
-def generate_json_data(split_path, data_path, max_captions_per_image, min_word_count):
-    split = json.load(open(split_path, 'r'))
+def generate_json_data(data_path, max_captions_per_image, min_word_count):
     word_count = Counter()
-
     train_img_paths = []
     train_caption_tokens = []
     validation_img_paths = []
     validation_caption_tokens = []
+    
+    with open(f"{data_path}/captions/captions.txt", "r") as f:
+        lines = f.readlines()
+        random.shuffle(lines)
+        split_idx = int(0.9 * len(lines))
+        train_lines = lines[:split_idx]
+        val_lines = lines[split_idx:]
 
-    max_length = 0
-    for img in split['images']:
-        caption_count = 0
-        for sentence in img['sentences']:
-            if caption_count < max_captions_per_image:
-                caption_count += 1
-            else:
-                break
+        for line in train_lines:
+            filename, caption = line.strip().split(",", 1)
+            tokens = caption.split()
+            train_img_paths.append(f"{data_path}/Images/{filename}")
+            train_caption_tokens.append(tokens)
+            word_count.update(tokens)   # The model won’t see them enough during training to learn good embeddings.
+                                        # Keeping them makes the vocabulary huge and training inefficient.
 
-            if img['split'] == 'train':
-                train_img_paths.append(data_path + '/imgs/' + img['filepath'] + '/' + img['filename'])
-                train_caption_tokens.append(sentence['tokens'])
-            elif img['split'] == 'val':
-                validation_img_paths.append(data_path + '/imgs/' + img['filepath'] + '/' + img['filename'])
-                validation_caption_tokens.append(sentence['tokens'])
-            max_length = max(max_length, len(sentence['tokens']))
-            word_count.update(sentence['tokens'])
+        for line in val_lines:
+            filename, caption = line.strip().split(",", 1)
+            tokens = caption.split()
+            validation_img_paths.append(f"{data_path}/Images/{filename}")
+            validation_caption_tokens.append(tokens)
+            word_count.update(tokens)
 
-    words = [word for word in word_count.keys() if word_count[word] >= args.min_word_count]
-    word_dict = {word: idx + 4 for idx, word in enumerate(words)}
-    word_dict['<start>'] = 0
+    words = [word for word in word_count.keys() if word_count[word] >= min_word_count]   # Take all words from captions, but only keep the frequent ones
+    word_dict = {word: idx + 4 for idx, word in enumerate(words)}  # Make a dictionary mapping words 
+    word_dict['<start>'] = 0                                       # (starting at 4, as 0–3 are reserved for special tokens).
     word_dict['<eos>'] = 1
     word_dict['<unk>'] = 2
-    word_dict['<pad>'] = 3
-
+    word_dict['<pad>'] = 3    
+    
     with open(data_path + '/word_dict.json', 'w') as f:
         json.dump(word_dict, f)
-
-    train_captions = process_caption_tokens(train_caption_tokens, word_dict, max_length)
-    validation_captions = process_caption_tokens(validation_caption_tokens, word_dict, max_length)
+        
+    train_captions = process_caption_tokens(train_caption_tokens, word_dict, max_captions_per_image)
+    validation_captions = process_caption_tokens(validation_caption_tokens, word_dict, max_captions_per_image)
 
     with open(data_path + '/train_img_paths.json', 'w') as f:
         json.dump(train_img_paths, f)
@@ -65,12 +68,11 @@ def process_caption_tokens(caption_tokens, word_dict, max_length):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate json files')
-    parser.add_argument('--split-path', type=str, default='data/coco/dataset.json')
-    parser.add_argument('--data-path', type=str, default='data/coco')
-    parser.add_argument('--max-captions', type=int, default=5,
+    parser.add_argument('--data-path', type=str, default='../data')
+    parser.add_argument('--max-captions', type=int, default=30,
                         help='maximum number of captions per image')
-    parser.add_argument('--min-word-count', type=int, default=5,
+    parser.add_argument('--min-word-count', type=int, default=2,
                         help='minimum number of occurences of a word to be included in word dictionary')
     args = parser.parse_args()
 
-    generate_json_data(args.split_path, args.data_path, args.max_captions, args.min_word_count)
+    generate_json_data(args.data_path, args.max_captions, args.min_word_count)
