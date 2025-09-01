@@ -1,7 +1,6 @@
 import argparse, json
 from collections import Counter
 import random
-import os
 
 def generate_json_data(data_path, max_captions_per_image, min_word_count):
     word_count = Counter()
@@ -20,15 +19,16 @@ def generate_json_data(data_path, max_captions_per_image, min_word_count):
         for line in train_lines:
             filename, caption = line.strip().split(",", 1)
             tokens = caption.split()
-            train_img_paths.append(f"{data_path}/Images/{filename}")
+            train_img_paths.append(f"/kaggle/input/image-captioning-dataset/Images/{filename}")
             train_caption_tokens.append(tokens)
-            word_count.update(tokens)   # The model won’t see them enough during training to learn good embeddings.
+            word_count.update(tokens)   # The model won’t see rare words enough during training to learn good embeddings.
                                         # Keeping them makes the vocabulary huge and training inefficient.
+                                        # as their embeddings are poorly trained (close to random noise).
 
         for line in val_lines:
             filename, caption = line.strip().split(",", 1)
             tokens = caption.split()
-            validation_img_paths.append(f"{data_path}/Images/{filename}")
+            validation_img_paths.append(f"/kaggle/input/image-captioning-dataset/Images/{filename}")
             validation_caption_tokens.append(tokens)
             word_count.update(tokens)
 
@@ -69,7 +69,7 @@ def process_caption_tokens(caption_tokens, word_dict, max_length):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate json files')
     parser.add_argument('--data-path', type=str, default='../data')
-    parser.add_argument('--max-captions', type=int, default=30,
+    parser.add_argument('--max-captions', type=int, default=40,
                         help='maximum number of captions per image')
     parser.add_argument('--min-word-count', type=int, default=2,
                         help='minimum number of occurences of a word to be included in word dictionary')
