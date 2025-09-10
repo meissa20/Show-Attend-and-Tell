@@ -17,7 +17,7 @@ from math import ceil
 from PIL import Image
 
 from dataset import pil_loader
-from decoder import Decoder
+from transformerDecoder import DecoderOnlyTransformer
 from encoder import Encoder
 from train import data_transforms
 
@@ -56,7 +56,9 @@ def generate_caption_visualization(encoder, decoder, img_path, word_dict, beam_s
     num_words = len(sentence_tokens)
     w = np.round(np.sqrt(num_words))
     h = np.ceil(np.float32(num_words) / w)
-    alpha = torch.tensor(alpha)
+    spatial_dim = img_features.size(1)  # Number of spatial locations (196 for VGG19)
+    num_tokens = len(sentence_tokens)
+    alpha = np.ones((num_tokens, spatial_dim)) / spatial_dim  # Uniform attention
 
     plot_height = ceil((num_words + 3) / 4.0)
     ax1 = plt.subplot(4, plot_height, 1)
@@ -98,7 +100,7 @@ if __name__ == "__main__":
     vocabulary_size = len(word_dict)
 
     encoder = Encoder(network=args.network)
-    decoder = Decoder(vocabulary_size, encoder.dim)
+    decoder = DecoderOnlyTransformer(vocab_size=len(word_dict), d_model=512, max_len=50, num_heads=8)
 
     decoder.load_state_dict(torch.load(args.model))
 
